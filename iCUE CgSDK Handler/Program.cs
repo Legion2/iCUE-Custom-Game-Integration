@@ -22,28 +22,6 @@ namespace iCUE_CgSDK_Handler
             PipeClient.Run();
         }
 
-        // Error Codes from the Corsair SDK
-        public static string ErrorToString(int error)
-        {
-            switch (error)
-            {
-                case 0:
-                    return "CE_Success";
-                case 1:
-                    return "CE_ServerNotFound";
-                case 2:
-                    return "CE_NoControl";
-                case 3:
-                    return "CE_ProtocolHandshakeMissing";
-                case 4:
-                    return "CE_IncompatibleProtocol";
-                case 5:
-                    return "CE_InvalidArguments";
-                default:
-                    return "unknown error";
-            }
-        }
-
         // Implement all CgSDK proxy functions
         public static int GetLastError() { return Cg.GetLastError(); }
         public static void PerformProtocolHandshake() { Cg.PerformProtocolHandshake(); }

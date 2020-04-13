@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using System.IO;
 using System.IO.Pipes;
 using System.Diagnostics;
@@ -14,14 +11,11 @@ namespace iCUE_HTTP_Server
     class PipeServer
     {
         // Used to keep track of operations and stop race-conditions
-        public static bool resetting;
         private static string nextMessageToSend;
         private static bool needToResetPipeClient;
 
         // Used for returning values from the PipeClient, nullable to be able to detect when a value is returned (ie. not null anymore)
-        private static bool isIntFunction;
-        private static int? intFunctionReturn;
-        private static bool? boolFunctionReturn;
+        private static string returnMessage;
 
         // The current PipeClient program, used to be able to shut it down at will
         private static Process pipeClient;
@@ -47,7 +41,6 @@ namespace iCUE_HTTP_Server
                     // Wait until the new PipeClient has connected to the server
                     pipeServer.WaitForConnection();
                     Console.WriteLine(pre + "Pipe Client connected");
-                    resetting = false;
 
                     try
                     {
@@ -57,9 +50,9 @@ namespace iCUE_HTTP_Server
                             using (StreamWriter sw = new StreamWriter(pipeServer, Encoding.UTF8, 512, true))
                             {
                                 // Wait until there is a message to send
-                                while (String.IsNullOrWhiteSpace(nextMessageToSend) && !needToResetPipeClient)
+                                while (string.IsNullOrWhiteSpace(nextMessageToSend) && !needToResetPipeClient)
                                 {
-                                    Thread.Sleep(10);
+                                    Thread.Sleep(1);
                                 }
 
                                 // Escape if need to restart the client
@@ -79,27 +72,20 @@ namespace iCUE_HTTP_Server
                                 // Wait until the PipeClient returns a response
                                 while ((msg = sr.ReadLine()) == null && !needToResetPipeClient)
                                 {
-                                    Thread.Sleep(10);
+                                    Thread.Sleep(1);
                                 }
 
                                 // Escape if need to restart the client
                                 if (needToResetPipeClient)
                                 {
+                                    returnMessage = "resetting";
                                     break;
                                 }
 
                                 // Print the response we received -- for debug
                                 Console.WriteLine(pre + "Received response: {0}", msg);
 
-                                // Return the correct type for the State Tracker
-                                if (isIntFunction)
-                                {
-                                    intFunctionReturn = int.Parse(msg);
-                                }
-                                else
-                                {
-                                    boolFunctionReturn = StringToBool(msg);
-                                }
+                                returnMessage = msg;
                             }
                         }
                     }
@@ -123,56 +109,36 @@ namespace iCUE_HTTP_Server
         // Called to initiate the safe relaunching of the client -- used to reset access to the CgSDK to allow SetGame() to be called twice
         public static void ResetClient ()
         {
-            resetting = true;
             needToResetPipeClient = true;
+        }
+
+        private static readonly object syncLock = new object();
+
+        private static string CallFunction(string function)
+        {
+            lock(syncLock)
+            {
+                nextMessageToSend = function;
+                while (returnMessage == null)
+                {
+                    Thread.Sleep(1);
+                }
+                string result = returnMessage;
+                returnMessage = null;
+                return result;
+            }
         }
 
         // Defines a function on the PipeClient that returns an integer
         public static int IntFunction (string function)
         {
-            // Wait for the server to finish resetting the client
-            while (resetting)
-            {
-                Thread.Sleep(1);
-            }
-
-            isIntFunction = true;
-            nextMessageToSend = function;
-
-            // Wait until we get a response from the PipeClient
-            int t;
-            while (intFunctionReturn == null)
-            {
-                Thread.Sleep(1);
-            }
-            t = (int)intFunctionReturn;
-
-            intFunctionReturn = null;
-            return t;
+            return int.Parse(CallFunction(function));
         }
 
         // Defines a function on the PipeClient that returns a boolean
         public static bool BoolFunction(string function)
         {
-            // Wait for the server to finish resetting the client
-            while (resetting)
-            {
-                Thread.Sleep(1);
-            }
-
-            isIntFunction = false;
-            nextMessageToSend = function;
-
-            // Wait until we get a response from the PipeClient
-            bool t;
-            while (boolFunctionReturn == null)
-            {
-                Thread.Sleep(1);
-            }
-            t = (bool)boolFunctionReturn;
-
-            boolFunctionReturn = null;
-            return t;
+            return StringToBool(CallFunction(function));
         }
 
         // Close the active client, called when we need to reset the client and when we close the server
